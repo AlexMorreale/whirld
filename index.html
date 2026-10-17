@@ -38,24 +38,13 @@
     transition: color 0.6s ease, text-shadow 0.6s ease;
     -webkit-tap-highlight-color: transparent;
   }
-  #hint {
-    position: fixed;
-    top: 5vh;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.68rem;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    pointer-events: none;
-    user-select: none;
-    z-index: 2;
-    transition: opacity 1s ease, color 0.6s ease;
+  @media (max-width: 600px) {
+    #hero h1 { letter-spacing: 0.26em; text-indent: 0.26em; }
   }
 </style>
 </head>
 <body>
   <canvas id="scene"></canvas>
-  <div id="hint">drag to spin &middot; tap title for color</div>
   <div id="hero"><h1 id="title">clones whirld</h1></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -78,7 +67,6 @@
 
     const canvas = document.getElementById('scene');
     const title = document.getElementById('title');
-    const hint = document.getElementById('hint');
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -157,7 +145,6 @@
         'radial-gradient(circle at 50% 42%, ' + T.bgIn + ' 0%, ' + T.bgOut + ' 62%, #000 100%)';
       title.style.color = T.text;
       title.style.textShadow = '0 0 34px ' + T.shadow;
-      hint.style.color = T.sub;
       dotMat.color.set(T.dot);
       wireMat.color.set(T.wire);
       glowMat.color.set(T.glow);
@@ -174,13 +161,12 @@
     });
 
     // --- drag-to-spin + auto-rotate ---
-    let interacted = false, dragging = false, lastX = 0, lastY = 0;
+    let dragging = false, lastX = 0, lastY = 0;
     let velX = 0.0025, targetTilt = 0;
     function onDown(e) {
       dragging = true;
       const p = e.touches ? e.touches[0] : e;
       lastX = p.clientX; lastY = p.clientY;
-      if (!interacted) { interacted = true; hint.style.opacity = '0'; }
     }
     function onMove(e) {
       if (!dragging) return;
@@ -197,12 +183,18 @@
     canvas.addEventListener('touchstart', onDown, { passive: true });
     window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onUp);
-    setTimeout(() => { if (!interacted) hint.style.opacity = '0'; }, 6500);
 
+    // fit the globe to the viewport, centered (never crops / off-centers on phones)
     function resize() {
       const w = innerWidth, h = innerHeight;
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h; camera.fov = w < 640 ? 58 : 45;
+      renderer.setSize(w, h);              // also sets canvas display size -> stays centered
+      const aspect = w / h;
+      camera.aspect = aspect;
+      camera.fov = 45;
+      const vfov = camera.fov * Math.PI / 180;
+      const margin = 1.1;                  // prominent but fully visible (a little zoomed in)
+      camera.position.z = (RADIUS * margin) / (Math.tan(vfov / 2) * Math.min(1, aspect));
+      camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
     }
     window.addEventListener('resize', resize); resize();
