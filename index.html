@@ -16,31 +16,19 @@
   }
   #scene { position: fixed; inset: 0; display: block; }
   #hero {
-    position: fixed;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
-    z-index: 2;
-    width: 100%;
-    padding: 0 16px;
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    text-align: center; z-index: 2; width: 100%; padding: 0 16px;
   }
   #hero h1 {
     display: inline-block;
     font-size: clamp(1.4rem, 6.5vw, 4rem);
-    font-weight: 200;
-    letter-spacing: 0.4em;
-    text-indent: 0.4em;
-    white-space: nowrap;
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
+    font-weight: 200; letter-spacing: 0.4em; text-indent: 0.4em;
+    white-space: nowrap; cursor: pointer; user-select: none; -webkit-user-select: none;
+    text-shadow: 0 0 34px rgba(0,0,0,0.5);
     transition: color 0.6s ease, text-shadow 0.6s ease;
     -webkit-tap-highlight-color: transparent;
   }
-  @media (max-width: 600px) {
-    #hero h1 { letter-spacing: 0.26em; text-indent: 0.26em; }
-  }
+  @media (max-width: 600px) { #hero h1 { letter-spacing: 0.26em; text-indent: 0.26em; } }
 </style>
 </head>
 <body>
@@ -50,20 +38,22 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
   (function () {
-    // --- color themes ---
+    // ---- framing ----
+    const DISTF = 1.4;      // camera distance (xRADIUS) -> close-up zoom
+    const OX = 0.8;         // orb pushed right (so we see its top-left quadrant)
+    const OY = -0.8;        // orb pushed down
+    const SPIN = 0.0003;    // slow auto-rotate (strong at this zoom)
+
+    // ---- color themes (tap the title to cycle; default amber) ----
     const THEMES = {
-      amber:  { bgIn: '#17110a', bgOut: '#000000', dot: 0xffb24d, wire: 0x3a2912, glow: 0x1a1308, star: 0xe0c48f, text: '#fff3e0', sub: 'rgba(224,186,128,0.65)', shadow: 'rgba(255,180,80,0.45)' },
-      mono:   { bgIn: '#161616', bgOut: '#000000', dot: 0xffffff, wire: 0x2a2a2a, glow: 0x0d0d0d, star: 0xdddddd, text: '#ffffff', sub: 'rgba(205,205,205,0.6)', shadow: 'rgba(255,255,255,0.40)' },
-      green:  { bgIn: '#04140c', bgOut: '#000000', dot: 0x4dff88, wire: 0x0c3a22, glow: 0x06180f, star: 0xa6f0c0, text: '#e8ffe8', sub: 'rgba(140,230,170,0.65)', shadow: 'rgba(90,255,150,0.40)' },
-      violet: { bgIn: '#0c0414', bgOut: '#000000', dot: 0xd24dff, wire: 0x301048, glow: 0x160824, star: 0xd9a8e8, text: '#ffffff', sub: 'rgba(214,160,232,0.65)', shadow: 'rgba(200,80,255,0.45)' },
+      amber:  { bgIn: '#17110a', bgOut: '#000000', dot: 0xffb24d, wire: 0x3a2912, glow: 0x1a1308, star: 0xe0c48f, text: '#fff3e0', shadow: 'rgba(255,180,80,0.45)' },
+      mono:   { bgIn: '#161616', bgOut: '#000000', dot: 0xffffff, wire: 0x2a2a2a, glow: 0x0d0d0d, star: 0xdddddd, text: '#ffffff', shadow: 'rgba(255,255,255,0.40)' },
+      green:  { bgIn: '#04140c', bgOut: '#000000', dot: 0x4dff88, wire: 0x0c3a22, glow: 0x06180f, star: 0xa6f0c0, text: '#e8ffe8', shadow: 'rgba(90,255,150,0.40)' },
+      violet: { bgIn: '#0c0414', bgOut: '#000000', dot: 0xd24dff, wire: 0x301048, glow: 0x160824, star: 0xd9a8e8, text: '#ffffff', shadow: 'rgba(200,80,255,0.45)' },
     };
     const ORDER = ['amber', 'mono', 'green', 'violet'];
-
     let idx = 0;
-    try {
-      const saved = localStorage.getItem('whirld-theme');
-      if (saved && ORDER.indexOf(saved) !== -1) idx = ORDER.indexOf(saved);
-    } catch (e) {}
+    try { const s = localStorage.getItem('whirld-theme'); if (s && ORDER.indexOf(s) !== -1) idx = ORDER.indexOf(s); } catch (e) {}
 
     const canvas = document.getElementById('scene');
     const title = document.getElementById('title');
@@ -71,27 +61,28 @@
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-    camera.position.set(0, 0, 320);
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
     const globe = new THREE.Group();
     scene.add(globe);
     const RADIUS = 100;
 
+    // crisp dot: solid core + tight halo (sharp up close, not a fuzzy blob)
     function dotTexture() {
-      const s = 64, c = document.createElement('canvas');
+      const s = 128, c = document.createElement('canvas');
       c.width = c.height = s;
       const ctx = c.getContext('2d');
       const g = ctx.createRadialGradient(s/2, s/2, 0, s/2, s/2, s/2);
-      g.addColorStop(0, 'rgba(255,255,255,1)');
-      g.addColorStop(0.4, 'rgba(255,255,255,0.9)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
+      g.addColorStop(0.00, 'rgba(255,255,255,1)');
+      g.addColorStop(0.42, 'rgba(255,255,255,1)');
+      g.addColorStop(0.60, 'rgba(255,255,255,0.45)');
+      g.addColorStop(1.00, 'rgba(255,255,255,0)');
       ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
       const t = new THREE.Texture(c); t.needsUpdate = true; return t;
     }
     const sprite = dotTexture();
 
-    // dots on a sphere (fibonacci)
-    const COUNT = 3500;
+    // dense dots so the close-up reads as a fine grid
+    const COUNT = 6000;
     const positions = new Float32Array(COUNT * 3);
     const golden = Math.PI * (3 - Math.sqrt(5));
     for (let i = 0; i < COUNT; i++) {
@@ -105,24 +96,24 @@
     const dotGeo = new THREE.BufferGeometry();
     dotGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const dotMat = new THREE.PointsMaterial({
-      size: 2.6, map: sprite, transparent: true, opacity: 0.95,
+      size: 1.7, map: sprite, transparent: true, opacity: 1.0,
       depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
     });
     globe.add(new THREE.Points(dotGeo, dotMat));
 
-    const wireMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.4 });
+    const wireMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.5 });
     globe.add(new THREE.LineSegments(
-      new THREE.WireframeGeometry(new THREE.SphereGeometry(RADIUS * 0.985, 36, 24)), wireMat
+      new THREE.WireframeGeometry(new THREE.SphereGeometry(RADIUS * 0.985, 48, 32)), wireMat
     ));
 
-    const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.6 });
-    globe.add(new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 0.96, 48, 48), glowMat));
+    const glowMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.35 });
+    globe.add(new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 0.94, 48, 48), glowMat));
 
     // starfield
-    const STARS = 1400;
+    const STARS = 900;
     const starPos = new Float32Array(STARS * 3);
     for (let i = 0; i < STARS; i++) {
-      const rr = 500 + Math.random() * 400;
+      const rr = 700 + Math.random() * 500;
       const t1 = Math.random() * Math.PI * 2;
       const t2 = Math.acos(Math.random() * 2 - 1);
       starPos[i*3] = rr * Math.sin(t2) * Math.cos(t1);
@@ -132,19 +123,19 @@
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
     const starMat = new THREE.PointsMaterial({
-      size: 1.4, transparent: true, opacity: 0.6,
+      size: 1.3, transparent: true, opacity: 0.5,
       map: sprite, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const stars = new THREE.Points(starGeo, starMat);
     scene.add(stars);
 
-    // --- apply a theme to CSS + 3D materials ---
+    // apply a theme to CSS + 3D materials
     function applyTheme(key) {
       const T = THEMES[key];
       document.body.style.background =
         'radial-gradient(circle at 50% 42%, ' + T.bgIn + ' 0%, ' + T.bgOut + ' 62%, #000 100%)';
       title.style.color = T.text;
-      title.style.textShadow = '0 0 34px ' + T.shadow;
+      title.style.textShadow = '0 0 34px ' + T.shadow + ', 0 0 10px rgba(0,0,0,0.6)';
       dotMat.color.set(T.dot);
       wireMat.color.set(T.wire);
       glowMat.color.set(T.glow);
@@ -152,7 +143,7 @@
     }
     applyTheme(ORDER[idx]);
 
-    // click/tap the title to cycle colors
+    // tap/click the title to cycle colors
     title.addEventListener('click', function (e) {
       e.stopPropagation();
       idx = (idx + 1) % ORDER.length;
@@ -160,51 +151,41 @@
       try { localStorage.setItem('whirld-theme', ORDER[idx]); } catch (err) {}
     });
 
-    // --- drag-to-spin + auto-rotate ---
-    let dragging = false, lastX = 0, lastY = 0;
-    let velX = 0.0025, targetTilt = 0;
-    function onDown(e) {
-      dragging = true;
-      const p = e.touches ? e.touches[0] : e;
-      lastX = p.clientX; lastY = p.clientY;
-    }
-    function onMove(e) {
-      if (!dragging) return;
-      const p = e.touches ? e.touches[0] : e;
-      velX = (p.clientX - lastX) * 0.005;
-      targetTilt = Math.max(-0.9, Math.min(0.9, targetTilt + (p.clientY - lastY) * 0.005));
-      lastX = p.clientX; lastY = p.clientY;
-      if (e.cancelable) e.preventDefault();
-    }
-    function onUp() { dragging = false; }
+    // drag-to-spin + slow auto-rotate
+    let velX = SPIN, targetTilt = 0, dragging = false, lastX = 0, lastY = 0;
+    function onDown(e){ dragging=true; const p=e.touches?e.touches[0]:e; lastX=p.clientX; lastY=p.clientY; }
+    function onMove(e){ if(!dragging)return; const p=e.touches?e.touches[0]:e;
+      velX=(p.clientX-lastX)*0.004; targetTilt=Math.max(-0.9,Math.min(0.9,targetTilt+(p.clientY-lastY)*0.004));
+      lastX=p.clientX; lastY=p.clientY; if(e.cancelable)e.preventDefault(); }
+    function onUp(){ dragging=false; }
     canvas.addEventListener('mousedown', onDown);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    canvas.addEventListener('touchstart', onDown, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: false });
+    canvas.addEventListener('touchstart', onDown, {passive:true});
+    window.addEventListener('touchmove', onMove, {passive:false});
     window.addEventListener('touchend', onUp);
 
-    // fit the globe to the viewport, centered (never crops / off-centers on phones)
     function resize() {
       const w = innerWidth, h = innerHeight;
-      renderer.setSize(w, h);              // also sets canvas display size -> stays centered
-      const aspect = w / h;
-      camera.aspect = aspect;
-      camera.fov = 45;
-      const vfov = camera.fov * Math.PI / 180;
-      const margin = 1.1;                  // prominent but fully visible (a little zoomed in)
-      camera.position.z = (RADIUS * margin) / (Math.tan(vfov / 2) * Math.min(1, aspect));
+      renderer.setSize(w, h);
+      camera.aspect = w / h; camera.fov = 45;
+      camera.position.z = RADIUS * DISTF;
       camera.lookAt(0, 0, 0);
       camera.updateProjectionMatrix();
+      // push the orb to a corner so its top-left quadrant fills the view
+      const vfov = camera.fov * Math.PI / 180;
+      const halfH = camera.position.z * Math.tan(vfov / 2);
+      const halfW = halfH * camera.aspect;
+      globe.position.set(OX * halfW, OY * halfH, 0);
     }
     window.addEventListener('resize', resize); resize();
 
-    (function animate() {
+    (function animate(){
       requestAnimationFrame(animate);
-      if (!dragging) velX += (0.0025 - velX) * 0.03;
+      if(!dragging) velX += (SPIN - velX) * 0.03;
       globe.rotation.y += velX;
       globe.rotation.x += (targetTilt - globe.rotation.x) * 0.08;
-      stars.rotation.y += 0.0003;
+      stars.rotation.y += 0.0002;
       renderer.render(scene, camera);
     })();
   })();
